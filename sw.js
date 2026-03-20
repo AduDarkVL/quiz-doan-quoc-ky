@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quoc-ky-cache-v1';
+const CACHE_NAME = 'quoc-ky-cache-v2';
 
 // Lần đầu chạy, nó cài đặt bộ nhớ đệm
 self.addEventListener('install', (event) => {
