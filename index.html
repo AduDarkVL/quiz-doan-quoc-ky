@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Đoán Quốc Kỳ - By MinhGay</title>
+    <title>Đoán Quốc Kỳ - Ultra Master</title>
     <style>
         /* BIẾN MÀU CHO SÁNG/TỐI */
         :root {
@@ -80,8 +80,9 @@
         .badge { padding: 6px 12px; border-radius: 10px; font-weight: bold; font-size: 14px; color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .bg-turn { background: #e74c3c; } 
         .bg-time { background: #c0392b; min-width: 48px; text-align: center; white-space: nowrap; box-sizing: border-box; }
+        .bg-total { background: #27ae60; min-width: 48px; text-align: center; white-space: nowrap; box-sizing: border-box; }
         
-        /* BẢNG ĐIỂM */
+        /* BẢNG ĐIỂM XỊN XÒ */
         .score-board { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
         .score-item { background: #8e44ad; padding: 6px 12px; border-radius: 10px; color: white; font-weight: bold; font-size: 13px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 5px rgba(0,0,0,0.1); white-space: nowrap; overflow: hidden; display: inline-flex; align-items: center; gap: 4px; }
         .score-item:hover { background: #9b59b6; }
@@ -104,6 +105,11 @@
         .lifelines { display: flex; gap: 10px; justify-content: center; margin-bottom: 15px; }
         .btn-life { background: #9b59b6; color: white; padding: 8px 15px; border-radius: 8px; font-weight: bold; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .btn-life:disabled { background: #95a5a6; cursor: not-allowed; opacity: 0.7; box-shadow: none; }
+
+        /* LOGIC TÀNG HÌNH TRỢ GIÚP VÀ KÉO NÚT TRÊN ĐIỆN THOẠI */
+        body:not(.pc-ui).answered-mobile #lifelines { display: none !important; }
+        body:not(.pc-ui).answered-mobile .game-header { margin-bottom: 5px; padding-bottom: 5px; border-bottom: none; }
+        body:not(.pc-ui).answered-mobile .flag-side img { max-height: 20vh; }
 
         /* GAME BODY */
         .game-body { display: flex; flex-direction: column; gap: 20px; align-items: stretch; }
@@ -142,7 +148,6 @@
         .hist-item { display: flex; align-items: center; padding: 10px; border: 1px solid var(--hist-item); border-radius: 8px; margin-bottom: 10px; }
         .hist-item img { width: 50px; height: 35px; border-radius: 4px; border: 1px solid #ccc; margin-right: 15px; object-fit: cover; background: white; }
 
-        /* CÁC NÚT ÔN TẬP ĐIỆN THOẠI (CHUNG 1 HÀNG) */
         .rev-end-btns { display: flex; gap: 5px; justify-content: center; width: 100%; margin-top: 15px; }
         .rev-end-btns .btn-main { margin: 0; flex: 1; font-size: 12px; padding: 10px 2px; text-align: center; }
 
@@ -154,7 +159,8 @@
             .score-item { padding: 4px 8px; font-size: 11px; }
             .badge { font-size: 11px; padding: 4px 8px; }
             .bg-time { min-width: 42px; font-size: 11px; padding: 4px 6px; } 
-            .rev-end-btns .btn-main { font-size: 10px; padding: 8px 2px; } /* Ép mỏng lại cho lọt 3 nút trên 1 hàng */
+            .bg-total { min-width: 42px; font-size: 11px; padding: 4px 6px; } 
+            .rev-end-btns .btn-main { font-size: 10px; padding: 8px 2px; } 
         }
     </style>
 </head>
@@ -178,6 +184,7 @@
                 <div class="hud-left">
                     <div id="turn-badge" class="badge bg-turn hidden">Lượt của: P1</div>
                     <div id="score-board" class="score-board"></div>
+                    <div class="badge bg-total hidden" id="total-timer">∑ 0s</div>
                     <div class="badge bg-time hidden" id="timer">⏱ 10s</div>
                 </div>
                 <div class="hud-right">
@@ -389,7 +396,6 @@
             {vi: "Greenland", en: "Greenland", c: "gl"}
         ];
 
-        // Lọc trùng cứng cựa 100% bằng Set cho mảng gốc để đéo bao giờ lặp cờ
         const allFlags = Array.from(new Map(rawFlags.map(item => [item.c, item])).values());
 
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
@@ -442,20 +448,36 @@
             }
         };
 
-        // BỘ NÃO LƯU TRỮ HOÀN TOÀN MỚI
         let state = {
             lang: 'vi', isPC: false,
             isMulti: false, isReview: false, isGameStarted: false,
             players: [], currP: 0, pool: [], currFlag: null, 
-            wrongPool: [], // Chứa những câu thực sự còn sai để Review
-            
-            // Lịch sử CHÍNH và ÔN TẬP rạch ròi
+            wrongPool: [], 
             mainHistory: [], reviewHistory: [], activeHistTab: 'main',
             mainPool: [], mainPlayers: [], mainCurrP: 0,
             
             answered: false, timeLeft: 10, timerId: null, autoId: null, isPaused: false,
-            lifeUsed50: false, lifeUsedSkip: false
+            lifeUsed50: false, lifeUsedSkip: false,
+            
+            mainTime: 0, revTime: 0, globalTimer: null
         };
+
+        function pauseGame() {
+            state.isPaused = true;
+            clearInterval(state.timerId);
+            if(state.autoId) {
+                clearTimeout(state.autoId);
+                state.autoId = null;
+                document.getElementById('btn-next').classList.remove('hidden');
+            }
+        }
+
+        function unpauseGame() {
+            if(state.isPaused && !state.answered && state.isGameStarted) {
+                state.isPaused = false;
+                if(document.getElementById('timer-toggle').value === 'on') resumeTimer();
+            }
+        }
 
         function changeLang() {
             state.lang = document.getElementById('lang-select').value;
@@ -493,7 +515,6 @@
             document.getElementById('btn-rev-start').innerText = t.rSt;
             document.getElementById('btn-rev-cont').innerText = t.rCl;
             
-            // Nút kết thúc Review
             document.getElementById('btn-rev-end-cont').innerText = t.btnRevCont;
             document.getElementById('btn-rev-end-rest').innerText = t.btnRevRest;
             document.getElementById('btn-rev-end-loop').innerText = t.btnRevLoop;
@@ -558,10 +579,7 @@
         });
 
         function openSettings() {
-            state.isPaused = true;
-            clearInterval(state.timerId);
-            clearTimeout(state.autoId);
-            
+            pauseGame();
             if(document.getElementById('play-mode').value === 'multi') renderPlayers();
 
             document.getElementById('modal-settings').classList.add('show');
@@ -583,10 +601,7 @@
                 renderLifelines();
             }
             document.getElementById('modal-settings').classList.remove('show');
-            if (state.isPaused && !state.answered) {
-                state.isPaused = false;
-                if(document.getElementById('timer-toggle').value === 'on') resumeTimer();
-            }
+            unpauseGame();
         }
 
         function applySettings() {
@@ -613,11 +628,24 @@
                 }
                 
                 document.getElementById('lifelines').classList.remove('hidden');
-                switchHistTab('main'); // Set tab default
+                switchHistTab('main'); 
 
                 state.pool = [...allFlags].sort(() => Math.random() - 0.5);
                 state.currP = 0; 
                 document.getElementById('btn-review-menu').classList.add('hidden');
+
+                state.mainTime = 0; state.revTime = 0;
+                clearInterval(state.globalTimer);
+                document.getElementById('total-timer').classList.remove('hidden');
+                
+                state.globalTimer = setInterval(() => {
+                    if (state.isPaused || !state.isGameStarted || state.answered) return;
+                    if (state.isReview) state.revTime++;
+                    else state.mainTime++;
+                    let t = state.isReview ? state.revTime : state.mainTime;
+                    document.getElementById('total-timer').innerText = `∑ ${t}s`;
+                }, 1000);
+
                 nextTurn();
             } else {
                 if(state.isMulti) {
@@ -641,10 +669,7 @@
                         document.getElementById('type-area').classList.remove('hidden');
                     }
                 }
-                if (state.isPaused && !state.answered) {
-                    state.isPaused = false;
-                    if(document.getElementById('timer-toggle').value === 'on') resumeTimer();
-                }
+                unpauseGame();
             }
         }
 
@@ -720,6 +745,7 @@
         }
 
         function nextTurn() {
+            document.body.classList.remove('answered-mobile'); // Gỡ hiệu ứng tàng hình ở câu mới
             clearTimeout(state.autoId); clearInterval(state.timerId);
             state.answered = false; state.lifeUsed50 = false; state.lifeUsedSkip = false;
             document.getElementById('feedback').innerText = "";
@@ -825,7 +851,6 @@
             document.querySelectorAll('.opt-btn').forEach(b => b.disabled = true);
             document.getElementById('type-input').disabled = true; document.getElementById('btn-guess').disabled = true;
 
-            // GHI LẠI LỊCH SỬ VÀO ĐÚNG NƠI
             const histObj = { f: state.currFlag, win: isWin, p: state.isMulti ? cp.name : '' };
             if (state.isReview) {
                 state.reviewHistory.unshift(histObj);
@@ -836,11 +861,16 @@
 
             if(state.wrongPool.length > 0 && !state.isReview) document.getElementById('btn-review-menu').classList.remove('hidden');
 
+            if(!state.isPC) document.body.classList.add('answered-mobile');
+
             if(document.getElementById('auto-select').value === 'auto') {
                 const wTime = parseFloat(document.getElementById('auto-time').value) * 1000;
                 state.autoId = setTimeout(nextTurnLogic, wTime || 2000);
             } else {
                 document.getElementById('btn-next').classList.remove('hidden');
+                if(!state.isPC) {
+                    setTimeout(() => { document.getElementById('btn-next').scrollIntoView({ behavior: "smooth", block: "end" }); }, 50);
+                }
             }
         }
 
@@ -862,19 +892,19 @@
             nextTurn();
         }
 
-        // TÍNH LẠI 50/50 
         function use5050() {
             if(state.answered || state.lifeUsed50) return;
             const isMC = document.getElementById('game-type').value === 'mc';
-            const numOpts = parseInt(document.getElementById('num-opts').value);
-            if(isMC && numOpts <= 2) return; 
+            
+            const btns = Array.from(document.querySelectorAll('.opt-btn'));
+            if(isMC && btns.length <= 2) return; 
 
             state.lifeUsed50 = true; 
             state.players[state.currP].cd50 = 5; 
             
             if(isMC) {
-                const btns = Array.from(document.querySelectorAll('.opt-btn'));
-                const wrongs = btns.filter(b => b.innerText !== state.currFlag[state.lang]);
+                let wrongs = btns.filter(b => b.innerText !== state.currFlag[state.lang]);
+                wrongs.sort(() => Math.random() - 0.5); 
                 const toRemove = Math.floor(btns.length / 2);
                 for(let i=0; i<toRemove; i++) {
                     if(wrongs[i]) wrongs[i].style.visibility = 'hidden';
@@ -892,12 +922,18 @@
             checkAnswer(null, null, false); 
         }
 
-        // --- LỊCH SỬ CHIA 2 TAB ĐẲNG CẤP ---
         function toggleHistory() {
             const p = document.getElementById('history-panel');
+            const isOpening = !p.classList.contains('show');
             p.classList.toggle('show');
             document.body.classList.toggle('show-hist', p.classList.contains('show'));
-            if(p.classList.contains('show')) renderHistory();
+            
+            if (isOpening) {
+                renderHistory();
+                if (!state.isPC) pauseGame(); 
+            } else {
+                if (!state.isPC) unpauseGame();
+            }
         }
         
         function switchHistTab(tab) {
@@ -925,24 +961,18 @@
             `).join('');
         }
 
-        // --- CƠ CHẾ ÔN TẬP HOÀN TOÀN MỚI ---
         function openReviewMenu() { 
-            state.isPaused = true;
-            clearTimeout(state.autoId); clearInterval(state.timerId);
+            pauseGame();
             document.getElementById('modal-review').classList.add('show'); 
         }
         function closeReviewMenu() { 
             document.getElementById('modal-review').classList.remove('show'); 
-            if(!state.answered) { 
-                state.isPaused = false; 
-                if(document.getElementById('timer-toggle').value === 'on') resumeTimer();
-            }
+            unpauseGame();
         }
         
         function startReview() {
             document.getElementById('modal-review').classList.remove('show');
             
-            // Nếu là lần đầu tiên vào Ôn tập của Session này
             if (!state.isReview) {
                 state.mainPool = [...state.pool];
                 state.mainPlayers = JSON.parse(JSON.stringify(state.players));
@@ -950,12 +980,10 @@
             }
             
             state.isReview = true;
-            // Chỉ lấy những câu đang nằm trong mảng sai
             state.pool = [...state.wrongPool].sort(() => Math.random() - 0.5);
             state.wrongPool = []; 
             state.reviewHistory = []; 
             
-            // Chuyển UI sang tab Ôn tập
             switchHistTab('rev');
             
             state.players.forEach(p => { p.score = 0; p.c = 0; p.w = 0; p.cd50 = 0; p.cdSkip = 0; });
@@ -964,8 +992,8 @@
             nextTurn();
         }
 
-        // MODAL KẾT THÚC ÔN TẬP
         function showReviewEnd() {
+            clearInterval(state.globalTimer);
             document.getElementById('modal-review-end').classList.add('show');
             if (state.wrongPool.length > 0) {
                 document.getElementById('btn-rev-end-loop').classList.remove('hidden');
@@ -977,19 +1005,16 @@
         function exitAndContinue() {
             document.getElementById('modal-review-end').classList.remove('show');
             
-            // Xử lý Merge Lịch sử: Tìm câu trong mainHistory và cập nhật Win/Lose mới nhất
             state.reviewHistory.forEach(r => {
                 let m = state.mainHistory.find(x => x.f.c === r.f.c);
                 if (m) m.win = r.win;
             });
 
-            // Khôi phục mảng và tiến độ game gốc
             state.pool = state.mainPool;
             state.currP = state.mainCurrP;
             state.players = state.mainPlayers;
             state.isReview = false;
             
-            // Đóng bảng Lịch sử cho gọn UI
             document.getElementById('history-panel').classList.remove('show');
             document.body.classList.remove('show-hist');
             switchHistTab('main');
@@ -997,15 +1022,31 @@
             updateScoreUI();
             document.getElementById('btn-review-menu').classList.toggle('hidden', state.wrongPool.length === 0);
             
+            state.globalTimer = setInterval(() => {
+                if (state.isPaused || !state.isGameStarted || state.answered) return;
+                if (state.isReview) state.revTime++;
+                else state.mainTime++;
+                let t = state.isReview ? state.revTime : state.mainTime;
+                document.getElementById('total-timer').innerText = `∑ ${t}s`;
+            }, 1000);
+            
             nextTurn();
         }
         
         function continueReview() {
             document.getElementById('modal-review-end').classList.remove('show');
-            // Móc mảng sai cũ ra chơi tiếp
             state.pool = [...state.wrongPool].sort(() => Math.random() - 0.5);
             state.wrongPool = [];
             state.currP = 0;
+            
+            state.globalTimer = setInterval(() => {
+                if (state.isPaused || !state.isGameStarted || state.answered) return;
+                if (state.isReview) state.revTime++;
+                else state.mainTime++;
+                let t = state.isReview ? state.revTime : state.mainTime;
+                document.getElementById('total-timer').innerText = `∑ ${t}s`;
+            }, 1000);
+
             nextTurn();
         }
 
@@ -1016,11 +1057,21 @@
             document.getElementById('history-panel').classList.remove('show');
             document.body.classList.remove('show-hist');
             
-            applySettings(); // Chạy game mới toanh
+            applySettings(); 
         }
 
         function showEndGame() {
-            document.getElementById('end-stats').innerText = `Thống kê đã xong! Cảm ơn mày đã chơi.`;
+            clearInterval(state.globalTimer);
+            document.getElementById('total-timer').classList.add('hidden');
+            
+            document.getElementById('end-stats').innerHTML = `
+                <div style="font-size: 15px; margin-top: 10px; color: #cbd5e0; text-align: left; display: inline-block; background: #1b2028; padding: 15px; border-radius: 8px; border: 1px solid #4a5568;">
+                    ⏱ Chơi chính: <b style="color: white;">${state.mainTime}s</b><br>
+                    ⏱ Ôn tập: <b style="color: white;">${state.revTime}s</b><br>
+                    <hr style="border-color: #4a5568; margin: 10px 0;">
+                    ⏳ TỔNG THỜI GIAN: <b style="color: #f1c40f; font-size: 18px;">${state.mainTime + state.revTime}s</b>
+                </div>
+            `;
             document.getElementById('modal-end').classList.add('show');
         }
 
