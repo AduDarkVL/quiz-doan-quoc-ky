@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quoc-ky-cache-v2';
+const CACHE_NAME = 'quoc-ky-cache-v3';
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
